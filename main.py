@@ -67,7 +67,7 @@ with conn.cursor() as cur:
             RETURNING id, f_name, l_name, email;      
             """) 
             
-            conn.commit()                                    # Иван, Петров, DemonQ3@mail.ru | Игорь, Николаев, NikolIgor@mail.ru
+            conn.commit()                                    # Иван, Петров, DemonQ31233@mail.ru | Игорь, Николаев, NikolIgor@mail.ru
             new_client = cur.fetchone()
             print(f"Добавлен новый клиент:\n"
                 f"ID: {new_client[0]}, Имя: {new_client[1]}, Фамилия: {new_client[2]}, Email: {new_client[3]}")
