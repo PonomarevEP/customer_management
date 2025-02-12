@@ -35,9 +35,27 @@ db_config = {
 
 connection = Connection(**db_config)
 conn = connection.connect()
-with conn.cursor() as cur:
-    if hello == "1":  # Создать таблицы
-        with conn.cursor() as cur:
+
+def get_search_criteria():
+    criteria = {
+        "f_name": None,
+        "l_name": None,
+        "email": None,
+        "phone": None
+    }
+
+    while True:
+        search_field = input("Введите критерий поиска (f_name, l_name, email или phone) или нажмите Enter для завершения:   ")
+        if not search_field:
+            break
+
+        search_value = input(f"Введите значение для поиска {search_field}:   ")
+        criteria[search_field] = search_value
+
+    return criteria
+
+def create_db(conn):
+    with conn.cursor() as cur:
             cur.execute("""
             CREATE TABLE IF NOT EXISTS clients (
                 id SERIAL PRIMARY KEY, 
@@ -57,93 +75,167 @@ with conn.cursor() as cur:
                 
             conn.commit()
             print("Таблицы 'clients' и 'clients_phone' успешно созданы.")
-                
-    elif hello == "2":  # Добавить клиента
-        client_info = input("Введите данные о клиент в формате Имя, Фамилия, email:   ").split(", ")
+
+def add_client(conn, first_name, last_name, email):
         with conn.cursor() as cur:
-            cur.execute(f"""
+            query = """
             INSERT INTO clients (f_name, l_name, email)
-            VALUES ('{client_info[0]}', '{client_info[1]}', '{client_info[2]}')
+            VALUES (%s, %s, %s)
             RETURNING id, f_name, l_name, email;      
-            """) 
+            """
             
-            conn.commit()                                    # Иван, Петров, DemonQ31233@mail.ru | Игорь, Николаев, NikolIgor@mail.ru
+            values = (first_name, last_name, email)
+            cur.execute(query, values)
+            conn.commit()  
+
             new_client = cur.fetchone()
             print(f"Добавлен новый клиент:\n"
                 f"ID: {new_client[0]}, Имя: {new_client[1]}, Фамилия: {new_client[2]}, Email: {new_client[3]}")
-            
-    elif hello == "3":  # добавить телефон для существующего клиента
-        client_info = input("Введите клиент ид и номер в формате id, номер:   ").split(", ")
-        with conn.cursor() as cur:
-            cur.execute(f"""
+
+def add_phone(conn, client_id, phone):
+    with conn.cursor() as cur:
+            query = """
             INSERT INTO clients_phone (clients_id, phone)
-            VALUES ({int(client_info[0])}, '{client_info[1]}')
+            VALUES (%s, %s)
             RETURNING id, clients_id, phone;      
-            """) 
+            """
+            values = (client_id, phone)
+            cur.execute(query, values) 
+            conn.commit()                                                            
             
-            conn.commit()                                   # 1, 89220152034  |  2, 89220152512                           
             new_phone = cur.fetchone()
             print(f"Добавлен новый телефон:\n"
                 f"ID записи: {new_phone[0]}, Клиент ID: {new_phone[1]}, Телефон: {new_phone[2]}")
-            
-    elif hello == "4":  # изменить данные о клиенте
-        update_client_info = input("Введите ID клиента и новые данные в формате ID, Имя, Фамилия, Email:   ").split(", ")
-        with conn.cursor() as cur:
-            cur.execute(f"""
-            UPDATE clients
-            SET f_name = '{update_client_info[1]}', l_name = '{update_client_info[2]}', email = '{update_client_info[3]}'
-            WHERE id = {int(update_client_info[0])};
-            """)
-            
-            conn.commit()                                     # 1, Дайнерис, Таргариен, 666@mail.ru 
-            print(f"Клиент с ID {update_client_info[0]} обновлен.")
-    elif hello == "5":  # удалить телефон для существующего клиента
-        delete_phone = input("Введите ID клиента и номер телефона для удаления в формате ID, Номер:   ").split(", ")
-        with conn.cursor() as cur:
-            cur.execute(f"""
+
+def change_client(conn, client_id, first_name=None, last_name=None, email=None):
+    update_fields = []
+    values_to_update = {}
+
+    if first_name is not None:
+        update_fields.append("f_name = %(first_name)s")
+        values_to_update["first_name"] = first_name
+
+    if last_name is not None:
+        update_fields.append("l_name = %(last_name)s")
+        values_to_update["last_name"] = last_name
+
+    if email is not None:
+        update_fields.append("email = %(email)s")
+        values_to_update["email"] = email
+
+    if len(update_fields) == 0:
+        print("Нет изменений для применения.")
+        return
+
+    with conn.cursor() as cur:
+        sql_query = f"""
+        UPDATE clients
+        SET {', '.join(update_fields)}
+        WHERE id = %(client_id)s;
+        """
+
+        values_to_update["client_id"] = int(client_id)
+
+        cur.execute(sql_query, values_to_update)
+        conn.commit()
+
+    print(f"Клиент с ID {client_id} обновлен.")
+
+def delete_phone(conn, client_id, phone):
+    with conn.cursor() as cur:
+            query = """
             DELETE FROM clients_phone
-            WHERE clients_id = {int(delete_phone[0])} AND phone = '{delete_phone[1]}';
-            """)
-            
-            conn.commit()                                      # 1, 89220152034
-            print(f"Телефон {delete_phone[1]} удален для клиента с ID {delete_phone[0]}.")
-    elif hello == "6": # удалить существующего клиента
-        delete_client_id = int(input("Введите ID клиента для удаления: "))
-        with conn.cursor() as cur:
-            
-            cur.execute(f"""
+            WHERE clients_id = %s AND phone = %s;
+            """
+
+            values = (int(client_id), phone)
+            cur.execute(query, values)
+            conn.commit()
+
+            print(f"Телефон {phone} удален для клиента с ID {client_id}.")
+
+def delete_client(conn, client_id):
+     with conn.cursor() as cur:  
+            cur.execute("""
             DELETE FROM clients_phone
-            WHERE clients_id = {delete_client_id};
-            """)
-            
-            cur.execute(f"""
+            WHERE clients_id = %(client_id)s;
+            """, {'client_id': client_id})
+
+            cur.execute("""
             DELETE FROM clients
-            WHERE id = {delete_client_id};
-            """)
+            WHERE id = %(client_id)s;
+            """, {'client_id': client_id})
             
             conn.commit()
-            print(f"Клиент с ID {delete_client_id} удален.")
+            print(f"Клиент с ID {client_id} удален.")
 
-    elif hello == "7":  # найти клиента по его данным: имени, фамилии, email или телефону
-        search_criteria = input("Введите критерий поиска (Имя, Фамилия, Email или Телефон):   ")
-        with conn.cursor() as cur:
-            cur.execute(f"""
-            SELECT c.id, c.f_name, c.l_name, c.email, cp.phone
-            FROM clients c
-            LEFT JOIN clients_phone cp ON c.id = cp.clients_id
-            WHERE c.f_name ILIKE '%{search_criteria}%'
-            OR c.l_name ILIKE '%{search_criteria}%'
-            OR c.email ILIKE '%{search_criteria}%'
-            OR cp.phone ILIKE '%{search_criteria}%';
-            """)
-            
-            results = cur.fetchall()
-            if not results:
-                print("Клиентов с такими данными не найдено.")
-            else:
-                for row in results:
-                    print(f"ID: {row[0]}, Имя: {row[1]}, Фамилия: {row[2]}, Email: {row[3]}, Телефон: {row[4]}")
-    else:  # Выход
+def find_client(conn, criteria):
+    with conn.cursor() as cur:
+        where_clauses = []
+        values_to_search = {}
+
+        for key, value in criteria.items():
+            if value is not None:
+                where_clauses.append(f"c.{key} ILIKE %(value_{key})s")
+                values_to_search[f"value_{key}"] = f"%{value}%"
+
+        if len(where_clauses) == 0:
+            print("Нет критериев для поиска.")
+            return
+
+        sql_query = f"""
+        SELECT c.id, c.f_name, c.l_name, c.email, cp.phone
+        FROM clients c
+        LEFT JOIN clients_phone cp ON c.id = cp.clients_id
+        WHERE {" OR ".join(where_clauses)};
+        """
+
+        cur.execute(sql_query, values_to_search)
+
+        results = cur.fetchall()
+        if not results:
+            print("Клиентов с такими данными не найдено.")
+        else:
+            for row in results:
+                print(f"ID: {row[0]}, Имя: {row[1]}, Фамилия: {row[2]}, Email: {row[3]}, Телефон: {row[4]}")
+
+with conn.cursor() as cur:
+    if hello == "1":  
+        create_db(conn)            
+    elif hello == "2":  
+        client_info = input("Введите данные о клиент в формате Имя, Фамилия, email:   ").split(", ")
+        add_client(conn, client_info[0], client_info[1], client_info[2])        
+    elif hello == "3":  
+        client_info = input("Введите клиент ид и номер в формате id, номер:   ").split(", ")
+        add_phone(conn, int(client_info[0]), client_info[1])
+    elif hello == "4":  
+        fields = ["first_name", "last_name", "email"]
+        print("Выберите поля для обновления:")
+        for i, field in enumerate(fields):
+            print(f"{i+1}. {field}")
+
+        choice = input("Введите номера полей через пробел (например, '1 3' для first_name и email): ")
+        selected_fields = [fields[int(num)-1] for num in choice.split()]
+
+        client_id = input("Введите ID клиента: ")
+        values = {}
+        for field in selected_fields:
+            value = input(f"Введите новое значение для {field}: ")
+            values[field.lower()] = value
+
+        change_client(conn, int(client_id), **values)
+    elif hello == "5":  
+        phone = input("Введите ID клиента и номер телефона для удаления в формате ID, Номер:   ").split(", ")
+        delete_phone(conn, int(phone[0]), phone[1])
+    elif hello == "6": 
+        delete_client_id = int(input("Введите ID клиента для удаления: "))
+        delete_client(conn, delete_client_id)
+    elif hello == "7":  
+        criteria = get_search_criteria()
+        find_client(conn, criteria)
+    else:  
         print("Выход")
+
+conn.close()
     
     
